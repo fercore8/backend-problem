@@ -1,135 +1,60 @@
-# Backend Problem
+## Installation
+pip install -r requirements.txt
 
-Welcome Candidate! The following problem will test your backend skill and help
-us assessing you as a future employee.
+## Run application
+python app.py
+python client.py
 
-## Overview
-Your goal is to create a service for posting and getting data from a database.
-Every insertion to the database should be performed only after the data has been
-validated. If the data isn't valid then the service should return an error message.
-
-You are allowed to use any languages/tools you would like however you must explain
-your choices. For example why have you picked one language over another and how
-did you make the decision to use a specific library out of vast selection out there.
-
-## Data
-The database should contain a list of sites and their metadata. Each site should
-contain a configuration data and historical data. Below you will find a list of
-all the fields that should be present in the database. The scheme provided is only
-for example so if you would like to change it, please do.
-
-### Sites and Metadata
-This data basically never changes, once a site is created it is extremely unlikely
-that any of these properties will change.
-```json
-{
-    "sites": [
-        {
-            "name": "Willo Woods",
-            "location": "north",
-            "id": 1
-        }
-    ]
-}
-```
-
-Validation:
-* `vendor` - can either be `Tesla` or `KATL`
-* `capacity_kwh`, `max_power_kw` - cannot be negative
-* `units` - cannot be negative
+## test application for POST and GET requests.
+### used CURL for testing the post requests:
+<br>curl -X POST -H "Content-Type: application/json" -d "{\"name\": \"Willo Woods\", \"location\": \"north\"}" http://localhost:8080/api/sites
+<br>curl -X POST -H "Content-Type: application/json" -d "{\"site_id\": 1, \"battery\": {\"vendor\": \"Battery Vendor\", \"capacity_kwh\": 100, \"max_power_kw\": 10}, \"production_units\": [{\"unit_type\": \"Solar\", \"units\": 5, \"kwp\": 10}, {\"unit_type\": \"Wind\", \"units\": 2}]}" http://localhost:8080/api/configurations
 
 
-### Configuration
-The configuration can change however not often. The interval of the changes is
-somewhere between half and five years.
-```json
-{
+### Example from get request after POST to /api/site
+<br>http://localhost:8080/api/sites
+[
+  {
+    "config": {},
     "id": 1,
+    "live_data": {},
+    "location": "north",
+    "name": "Willo Woods"
+  }
+]
+
+
+### test Get endpoints
+<br>http://localhost:8080/api/configurations
+<br> [
+  {
     "battery": {
-        "vendor": "Tesla",
-        "capacity_kwh": 3100,
-        "max_power_kw": 400,
+      "capacity_kwh": 3100,
+      "id": 1,
+      "max_power_kw": 400,
+      "vendor": "Tesla"
     },
-    "production": {
-        "pv": {
-            "units": 1,
-            "kwp": 500,
-        },
-        "bio": {
-            "units": 0,
-        },
-        "cro": {
-            "units": 2,
-            "kwp": 800,
-        },
-    }
-}
-```
-
-Validation:
-* `vendor` - can either be `Tesla` or `KATL`
-* `capacity_kwh`, `max_power_kw` - cannot be negative
-* `units` - cannot be negative
-
-### Live Data
-This data is updated every ten minutes.
-```json
-    "dt-stamp": [
-        "2023-01-01 00:00:00",
-        "2023-01-01 00:10:00",
-        "2023-01-01 00:20:00"
+    "id": 1,
+    "production_units": [
+      {
+        "id": 1,
+        "kwp": 800,
+        "unit_type": "Electric",
+        "units": 2
+      },
+      {
+        "id": 2,
+        "kwp": 500,
+        "unit_type": "Solar",
+        "units": 2
+      }
     ],
-    "soc": [
-        0,
-        10,
-        20
-    ],
-    "load_kwh": [
-        350,
-        600,
-        500
-    ],
-    "net_load_kwh": [
-        400,
-        700,
-        600
-    ],
-    "pv_notification": [
-        true,
-        true,
-        true
-    ],
-    "bio_notification": [
-        false,
-        false,
-        false
-    ],
-    "cro_notification": [
-        false,
-        false,
-        false
-    ],
-```
-Validation:
-* `soc` - A number between 0 and 100
-* `notification` - boolean
-* `*_kwh` - cannot be negative
+    "site": 1
+  }
+]
 
-## Endpoints
-Please provide appropriate get and post endpoints for creating new sites, pushing
-configuration and live changes, and getting information.
-For the get requests create an endpoint for the configuration data, and another
-one for the latest live data entry.
-
-## Cloud Architecture
-Imagine that one day this service will have to be scaled to handle millions of interrupts
-per day. Please explain how you would expand this system and how you would create it
-in a cloud architecture. Additionally provide a diagram visualizing your architecture.
-
-This section is theoretical only and does not require code.
-
-## Submitting
-Please clone this repository, and submit your changes through a pull request.
-
-Good luck!
+# Cloud Architecture
+We can implement a nginx load balancer that listens to the requests of the clients, a server that gets the data from the load balancer and sends it to a queue such as RabbitMQ,
+a client for sending data to the system , a parser to fetch data from the queue. In this manner we can take care of 
+multiple requests and make sure our stress on the database is not excessive.
 
