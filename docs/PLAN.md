@@ -158,10 +158,15 @@ path with fake money first. Full detail in [ARCHITECTURE.md](ARCHITECTURE.md).
 - **Exit criteria:** live fills reconcile to paper expectations; realized
   calibration matches backtest within tolerance.
 
-### Phase 4 — Scale & harden
-- Continuous calibration monitoring & model-drift alerts.
-- More signals, automated research pipeline, parameter sweeps in backtest.
-- Operational: monitoring, alerting, secrets management, kill-switch dashboard.
+### Phase 4 — Scale & harden  🔨 (monitoring & ops built)
+- **Monitoring & ops dashboard** ✅ (`monitoring/`): reads the audit trail and
+  computes operational health — rolling vs all-time calibration against the
+  market baseline, **model-drift / edge-decay detection**, drawdown vs the
+  kill-switch, and tiered alerts (INFO/WARN/CRITICAL). `python -m polybet monitor`
+  renders a terminal panel or a self-contained HTML page (`--html`), and exits
+  non-zero on CRITICAL so it doubles as a health check / CI gate.
+- Still ahead: more signals, automated research pipeline, parameter sweeps in
+  backtest; secrets management; continuous (scheduled) monitoring + paging.
 
 ---
 

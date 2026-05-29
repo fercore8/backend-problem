@@ -143,15 +143,25 @@ class PaperTrader:
         self.engine = TradingEngine(settings, model, PaperExecutor(), self.portfolio)
         self._ticks = 0
 
-    def tick(self) -> None:
-        """One poll cycle: settle what resolved, then evaluate live markets."""
-        # 1. Settle anything that resolved since last poll (realise P&L + score).
-        for market_id, resolved_yes in self.source.drain_resolutions().items():
+    def _settle_resolved(self, resolutions: dict[str, bool]) -> None:
+        """Settle resolved markets, persisting only those we actually held.
+
+        Markets we never bet have no position and no forecast to score, so we
+        skip them in the audit trail — otherwise n_resolved would count the whole
+        universe instead of our actual bets, muddying every downstream metric.
+        """
+        for market_id, resolved_yes in resolutions.items():
+            held = market_id in self.engine.state.open_predictions
             fair = self.engine.state.open_predictions.get(market_id)
             consensus = self.engine.state.open_consensus.get(market_id)
             pnl = self.engine.settle(market_id, resolved_yes)
-            if self.repo is not None:
+            if self.repo is not None and held:
                 self.repo.record_settlement(market_id, resolved_yes, pnl, fair, consensus)
+
+    def tick(self) -> None:
+        """One poll cycle: settle what resolved, then evaluate live markets."""
+        # 1. Settle anything that resolved since last poll (realise P&L + score).
+        self._settle_resolved(self.source.drain_resolutions())
 
         # 2. Evaluate the current snapshot and place any approved bets.
         markets = self.source.poll()
@@ -168,13 +178,7 @@ class PaperTrader:
         while not self.source.done() and self._ticks < max_ticks:
             self.tick()
         # Flush any final resolutions the last poll queued up.
-        final = self.source.drain_resolutions()
-        for market_id, resolved_yes in final.items():
-            fair = self.engine.state.open_predictions.get(market_id)
-            consensus = self.engine.state.open_consensus.get(market_id)
-            pnl = self.engine.settle(market_id, resolved_yes)
-            if self.repo is not None:
-                self.repo.record_settlement(market_id, resolved_yes, pnl, fair, consensus)
+        self._settle_resolved(self.source.drain_resolutions())
         return self.report()
 
     def report(self) -> PaperRunReport:

@@ -30,8 +30,15 @@ python -m polybet backtest                 # edge run, averaged over 20 seeds
 python -m polybet backtest --no-edge       # control: estimate == market price
 python -m polybet paper --db audit.db      # paper-trade a simulated live feed + persist
 python -m polybet paper --live             # paper-trade real Polymarket data (read-only)
-python -m pytest -q                        # 40 tests, all pure-stdlib
+python -m polybet monitor --db audit.db    # ops dashboard: calibration, drawdown, alerts
+python -m polybet monitor --db audit.db --html dash.html   # self-contained HTML export
+python -m pytest -q                        # 51 tests, all pure-stdlib
 ```
+
+The `monitor` command turns the audit trail into operational health: rolling vs
+all-time calibration against the market baseline, **edge-decay / model-drift
+detection**, drawdown vs the kill-switch, and tiered alerts. It exits non-zero on
+a CRITICAL alert, so it doubles as a health check or CI gate.
 
 The `paper` loop is the Phase-2 heartbeat: it polls markets on a cadence, bets,
 settles, and — crucially — **scores our forecasts against the market consensus

@@ -96,3 +96,21 @@ class Repository:
                 "SELECT consensus, resolved_yes FROM settlements WHERE consensus IS NOT NULL"
             ).fetchall()
         return [r[0] for r in rows], [int(r[1]) for r in rows]
+
+    def settlement_series(self) -> list[tuple[float, float | None, float | None, int]]:
+        """Time-ordered settlement rows: (pnl, fair_prob, consensus, outcome).
+
+        This is the raw material for the monitoring layer: cumulative P&L builds
+        the equity curve, and the aligned (forecast, consensus, outcome) triples
+        let us re-score calibration over any rolling window.
+        """
+        with closing(self._conn()) as c:
+            rows = c.execute(
+                "SELECT pnl, fair_prob, consensus, resolved_yes"
+                " FROM settlements ORDER BY id ASC"
+            ).fetchall()
+        return [(r[0], r[1], r[2], int(r[3])) for r in rows]
+
+    def bet_count(self) -> int:
+        with closing(self._conn()) as c:
+            return int(c.execute("SELECT COUNT(*) FROM bets").fetchone()[0])

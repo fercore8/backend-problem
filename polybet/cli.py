@@ -4,6 +4,7 @@
     python -m polybet backtest --no-edge   # control: estimate == market price
     python -m polybet paper                # paper-trade a simulated live feed
     python -m polybet paper --live         # paper-trade real Polymarket data (needs requests)
+    python -m polybet monitor --db D.db    # ops dashboard from a persisted audit trail
 
 The CLI wires the standard stack: ExternalOdds + Consensus -> ShrinkageEnsemble
 -> edge gate -> fractional Kelly -> risk engine -> paper fills, and (in paper
@@ -95,6 +96,8 @@ def cmd_paper(args: argparse.Namespace) -> int:
     print(report.render())
     if args.db:
         print(f"\n  audit trail persisted to {args.db}")
+        print(f"  ops dashboard:  python -m polybet monitor --db {args.db}")
+        print(f"  html export  :  python -m polybet monitor --db {args.db} --html dashboard.html")
     return 0
 
 
@@ -130,6 +133,38 @@ def _cmd_paper_live(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_monitor(args: argparse.Namespace) -> int:
+    """Render the ops dashboard from a persisted audit trail.
+
+    Works on a finished paper run, a historical DB, or (because it only reads)
+    a DB being written by a live run. Terminal view by default; --html exports a
+    self-contained page.
+    """
+    from .data.repository import Repository
+    from .monitoring import Thresholds, compute_health
+    from .monitoring.dashboard import render_html, render_terminal
+
+    repo = Repository(args.db)
+    series = repo.settlement_series()
+    n_bets = repo.bet_count()
+    thresholds = Thresholds(rolling_window=args.window, min_sample=args.min_sample)
+    report = compute_health(series, SETTINGS, n_bets=n_bets, thresholds=thresholds)
+
+    if args.html:
+        preds, outs = repo.calibration_data()
+        page = render_html(report, predictions=preds, outcomes=outs)
+        with open(args.html, "w", encoding="utf-8") as f:
+            f.write(page)
+        print(f"Wrote dashboard to {args.html}  (status: {report.status.label})")
+    else:
+        print(render_terminal(report))
+
+    # Non-zero exit on CRITICAL so this is usable as a health check / CI gate.
+    from .monitoring.health import AlertLevel
+
+    return 1 if report.status >= AlertLevel.CRITICAL else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="polybet", description="A wise base for Polymarket betting.")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -153,6 +188,13 @@ def main(argv: list[str] | None = None) -> int:
     pa.add_argument("--db", type=str, default=None, help="SQLite path for the audit trail")
     pa.add_argument("--live", action="store_true", help="use the real Polymarket feed (read-only)")
     pa.set_defaults(func=cmd_paper)
+
+    mo = sub.add_parser("monitor", help="render the ops dashboard from an audit DB")
+    mo.add_argument("--db", type=str, default="polybet.db", help="SQLite audit trail to read")
+    mo.add_argument("--html", type=str, default=None, help="write a self-contained HTML page here")
+    mo.add_argument("--window", type=int, default=100, help="rolling window for recent calibration")
+    mo.add_argument("--min-sample", type=int, default=30, help="min resolved markets for verdicts")
+    mo.set_defaults(func=cmd_monitor)
 
     args = p.parse_args(argv)
     return args.func(args)
