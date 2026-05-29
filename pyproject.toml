@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "polybet"
+version = "0.1.0"
+description = "A wise, modular base for placing bets on Polymarket (edge -> Kelly -> risk -> execution)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []  # core is pure standard library
+
+[project.optional-dependencies]
+# Live data + on-chain execution path only.
+live = ["requests>=2.31", "py-clob-client>=0.17"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+polybet = "polybet.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["polybet*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
