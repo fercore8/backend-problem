@@ -1,135 +1,97 @@
-# Backend Problem
+# polybet
 
-Welcome Candidate! The following problem will test your backend skill and help
-us assessing you as a future employee.
+A wise, modular base for placing bets on **Polymarket**.
 
-## Overview
-Your goal is to create a service for posting and getting data from a database.
-Every insertion to the database should be performed only after the data has been
-validated. If the data isn't valid then the service should return an error message.
+The thesis in one sentence: *make money not by betting a lot, but by betting only
+when your probability estimate beats the market's, sizing so variance can't kill
+you, and letting a small edge compound.*
 
-You are allowed to use any languages/tools you would like however you must explain
-your choices. For example why have you picked one language over another and how
-did you make the decision to use a specific library out of vast selection out there.
+This repo implements the full harvesting pipeline — **edge detection → Kelly
+sizing → a hard risk engine → execution → accounting → calibration metrics** —
+with a synthetic data generator so the whole thing runs and is tested **offline,
+zero install**. Real Polymarket data and on-chain execution live behind optional,
+guarded paths.
 
-## Data
-The database should contain a list of sites and their metadata. Each site should
-contain a configuration data and historical data. Below you will find a list of
-all the fields that should be present in the database. The scheme provided is only
-for example so if you would like to change it, please do.
+> 📐 Strategy & roadmap: [`docs/PLAN.md`](docs/PLAN.md)
+> 🏗️ Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
-### Sites and Metadata
-This data basically never changes, once a site is created it is extremely unlikely
-that any of these properties will change.
-```json
-{
-    "sites": [
-        {
-            "name": "Willo Woods",
-            "location": "north",
-            "id": 1
-        }
-    ]
-}
+## Why this is "simple yet effective"
+
+- **Pure standard-library core** — runs anywhere; no numpy/pandas/requests to test the brain.
+- **One engine spine** for backtest, paper, and live — what you validate is what you trade.
+- **Every dial in one `Settings`** — tunable and backtest-sweepable.
+- **The thesis is a test** — the suite fails if the edge ever becomes illusory.
+
+## Quickstart
+
+```bash
+# No dependencies needed for the core demo.
+python -m polybet backtest                 # edge run, averaged over 20 seeds
+python -m polybet backtest --no-edge       # control: estimate == market price
+python -m pytest -q                        # 28 tests, all pure-stdlib
 ```
 
-Validation:
-* `vendor` - can either be `Tesla` or `KATL`
-* `capacity_kwh`, `max_power_kw` - cannot be negative
-* `units` - cannot be negative
+`--no-edge` is the honesty check: when our estimate *is* the market price, the
+edge gate finds nothing to bet (0 trades, exactly 0% ROI). When we feed in a
+better-informed signal, the bankroll grows in expectation — proving the profit
+comes from the signal, not the machinery.
 
+Example (offline synthetic data, default settings):
 
-### Configuration
-The configuration can change however not often. The interval of the changes is
-somewhere between half and five years.
-```json
-{
-    "id": 1,
-    "battery": {
-        "vendor": "Tesla",
-        "capacity_kwh": 3100,
-        "max_power_kw": 400,
-    },
-    "production": {
-        "pv": {
-            "units": 1,
-            "kwp": 500,
-        },
-        "bio": {
-            "units": 0,
-        },
-        "cro": {
-            "units": 2,
-            "kwp": 800,
-        },
-    }
-}
+```
+                 with edge          no-edge control
+  median ROI     ~+8%               +0.0%
+  profitable     13/20 seeds        0/20 (no bets)
+  Brier          beats baseline     —
 ```
 
-Validation:
-* `vendor` - can either be `Tesla` or `KATL`
-* `capacity_kwh`, `max_power_kw` - cannot be negative
-* `units` - cannot be negative
+We aggregate over many seeds on purpose: any single betting sequence is
+dominated by variance (the drawdown kill-switch can legitimately end an unlucky
+run early). The *expected* behaviour is what matters, and it is positive.
 
-### Live Data
-This data is updated every ten minutes.
-```json
-    "dt-stamp": [
-        "2023-01-01 00:00:00",
-        "2023-01-01 00:10:00",
-        "2023-01-01 00:20:00"
-    ],
-    "soc": [
-        0,
-        10,
-        20
-    ],
-    "load_kwh": [
-        350,
-        600,
-        500
-    ],
-    "net_load_kwh": [
-        400,
-        700,
-        600
-    ],
-    "pv_notification": [
-        true,
-        true,
-        true
-    ],
-    "bio_notification": [
-        false,
-        false,
-        false
-    ],
-    "cro_notification": [
-        false,
-        false,
-        false
-    ],
+> Numbers from synthetic data illustrate the mechanics — they are **not** a
+> forecast of real returns. The point of Phase 1 is to prove the pipeline works
+> before any real capital. See the roadmap.
+
+## How it works (30-second tour)
+
+1. **Valuation** (`valuation/`) — estimate `P(YES)` for each market. Start from
+   the market price and move away only as far as your signal + confidence justify
+   (`ShrinkageEnsemble`).
+2. **Edge gate** (`strategy/edge.py`) — bet YES if `q > price`, NO if `q < price`,
+   only when the edge clears spread + slippage + fees.
+3. **Sizing** (`strategy/kelly.py`) — fractional Kelly: `f* = (q − p)/(1 − p)`,
+   times a safety multiplier (default ¼).
+4. **Risk** (`risk/`) — per-market, aggregate, and book-participation caps + a
+   drawdown kill switch. No signal can override it.
+5. **Execution** (`execution/`) — paper fills walk the real book (honest
+   slippage); live trading is a deliberately guarded stub.
+6. **Metrics** (`metrics.py`) — Brier, log loss, calibration, ROI, drawdown,
+   Sharpe. Calibration is the gate to risking real money.
+
+## Going live (later, gated)
+
+```bash
+pip install -e ".[live]"     # adds requests + py-clob-client
 ```
-Validation:
-* `soc` - A number between 0 and 100
-* `notification` - boolean
-* `*_kwh` - cannot be negative
 
-## Endpoints
-Please provide appropriate get and post endpoints for creating new sites, pushing
-configuration and live changes, and getting information.
-For the get requests create an endpoint for the configuration data, and another
-one for the latest live data entry.
+Live execution refuses to run unless `POLYBET_ENABLE_LIVE=true` *and* a signer is
+wired. Complete the **go-live checklist** in `docs/PLAN.md` first.
 
-## Cloud Architecture
-Imagine that one day this service will have to be scaled to handle millions of interrupts
-per day. Please explain how you would expand this system and how you would create it
-in a cloud architecture. Additionally provide a diagram visualizing your architecture.
+## Status & honest disclaimer
 
-This section is theoretical only and does not require code.
+Phase 1 (research & backtest harness) is scaffolded and green. There is no
+guaranteed-profit machine — we make money only insofar as our probabilities are
+better calibrated than the market's, net of costs. Prove the edge on paper before
+risking a cent, and confirm Polymarket is **legal in your jurisdiction**.
 
-## Submitting
-Please clone this repository, and submit your changes through a pull request.
+---
 
-Good luck!
+<details>
+<summary>Original repository challenge (this branch repurposes the repo)</summary>
 
+This repository started as a generic backend coding challenge. This branch
+(`claude/polymarket-betting-app-KX5RJ`) repurposes it into the Polymarket betting
+base described above. The original challenge text remains in git history.
+
+</details>

@@ -68,7 +68,7 @@ class TradingEngine:
                 market_id=signal.market_id,
                 side=signal.side,
                 shares=decision.shares,
-                limit_price=signal.price,
+                limit_price=signal.limit_price,
             )
             fill = self.executor.execute(order, market)
             if fill.filled:

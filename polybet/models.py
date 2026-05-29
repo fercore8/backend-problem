@@ -88,9 +88,10 @@ class Signal:
     market_id: str
     side: Side
     fair_prob: float       # our estimate of P(YES)
-    price: float           # price we would pay for the chosen side's share
-    edge: float            # expected profit per share, net of modeled costs
+    price: float           # best-of-book price we'd pay for the chosen side
+    edge: float            # expected profit per share at `price`, net of costs
     kelly_fraction: float  # fraction of bankroll Kelly suggests (pre risk caps)
+    limit_price: float = 1.0  # worst price still clearing min_edge (book-walk cap)
 
     @property
     def is_actionable(self) -> bool:

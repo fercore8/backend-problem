@@ -28,6 +28,15 @@ class CostModel:
         """Price we actually expect to pay for a marketable buy."""
         return quoted * (1.0 + self.taker_fee) + self.slippage
 
+    def worst_quote_for_edge(self, win_prob: float, min_edge: float) -> float:
+        """Worst raw quote we can pay and still clear ``min_edge``.
+
+        Inverts ``effective_buy_price``: solve win_prob - effective(q) >= min_edge
+        for q. This is the order's limit price, so a marketable order may walk
+        into book depth yet every filled share still beats the edge gate.
+        """
+        return (win_prob - min_edge - self.slippage) / (1.0 + self.taker_fee)
+
 
 def build_signal(
     market: Market,
@@ -59,6 +68,7 @@ def build_signal(
                     price=buy_price,
                     edge=edge,
                     kelly_fraction=kelly_fraction(fair_prob, buy_price),
+                    limit_price=cost.worst_quote_for_edge(fair_prob, settings.min_edge),
                 )
             )
 
@@ -77,6 +87,7 @@ def build_signal(
                     price=buy_price,
                     edge=edge,
                     kelly_fraction=kelly_fraction(no_prob, buy_price),
+                    limit_price=cost.worst_quote_for_edge(no_prob, settings.min_edge),
                 )
             )
 
