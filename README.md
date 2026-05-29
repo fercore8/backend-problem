@@ -28,8 +28,15 @@ guarded paths.
 # No dependencies needed for the core demo.
 python -m polybet backtest                 # edge run, averaged over 20 seeds
 python -m polybet backtest --no-edge       # control: estimate == market price
-python -m pytest -q                        # 28 tests, all pure-stdlib
+python -m polybet paper --db audit.db      # paper-trade a simulated live feed + persist
+python -m polybet paper --live             # paper-trade real Polymarket data (read-only)
+python -m pytest -q                        # 40 tests, all pure-stdlib
 ```
+
+The `paper` loop is the Phase-2 heartbeat: it polls markets on a cadence, bets,
+settles, and — crucially — **scores our forecasts against the market consensus
+every run.** The `beats baseline ✅` verdict (model Brier < market Brier) is the
+gate to ever risking real money.
 
 `--no-edge` is the honesty check: when our estimate *is* the market price, the
 edge gate finds nothing to bet (0 trades, exactly 0% ROI). When we feed in a

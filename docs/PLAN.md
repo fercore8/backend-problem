@@ -130,13 +130,25 @@ path with fake money first. Full detail in [ARCHITECTURE.md](ARCHITECTURE.md).
 - **Exit criteria:** `python -m polybet backtest` shows positive ROI with the
   signal and ~break-even with the control; tests green.
 
-### Phase 2 — Real data, still paper  (next)
-- Wire `PolymarketClient` (Gamma + CLOB) to pull live markets & books.
-- Build the **first real signal**: start with #1 (Dutch-book scan — model-free)
-  and #2 (cross-venue de-vig). Log forecasts to SQLite via `Repository`.
-- Run the paper loop on live data for a sustained period.
-- **Exit criteria:** on live data, Brier beats the consensus baseline and paper
-  P&L is positive across ≥ a few hundred resolved markets with sane drawdown.
+### Phase 2 — Paper-trading loop & calibration scoring  ✅ (built in this repo)
+- **Paper runner** (`runner.py`): polls a `MarketSource` on a cadence, runs the
+  shared engine, settles resolved markets, and **scores our forecasts against the
+  market consensus every run** — the `beats baseline` verdict is the gate to real
+  money. Same loop runs on a simulated feed (offline, deterministic) or live data.
+- **Signal layer** (`signals/`): `SignalSource` interface, cross-venue **de-vig**
+  source (`MoneylineOddsSource`), an explicit `MarketMatcher` (wrong matches bet
+  the wrong side, so matching is auditable, never magic), and `combine_sources`
+  to blend several signals by confidence.
+- **Persistence** (`Repository`): every bet + settlement is logged to SQLite
+  with *both* our forecast and the consensus, so calibration can be re-scored
+  and the model improved offline. Additive auto-migration keeps old DBs working.
+- **Exit criteria (met on the simulated feed):** `python -m polybet paper` shows
+  model Brier < market Brier (`beats baseline ✅`) and positive P&L across
+  hundreds of resolved markets.
+- **Still to do for live data:** wire a real signal source (de-vigged sportsbook
+  / Kalshi odds) into `ExternalOddsModel` and build the reviewed `MarketMatcher`
+  mapping, then run `python -m polybet paper --live` for a sustained period
+  before advancing. Until a signal is wired, the engine correctly abstains.
 
 ### Phase 3 — Live, small  (gated)
 - Implement `LiveExecutor` against `py-clob-client` (EIP-712 signing, USDC

@@ -1,11 +1,13 @@
 """Command-line entrypoints.
 
-    python -m polybet backtest            # run the offline edge demo + report
-    python -m polybet backtest --no-edge  # control run: signal as noisy as market
-    python -m polybet paper               # paper-trade live Polymarket data (needs requests)
+    python -m polybet backtest             # offline edge demo, averaged over seeds
+    python -m polybet backtest --no-edge   # control: estimate == market price
+    python -m polybet paper                # paper-trade a simulated live feed
+    python -m polybet paper --live         # paper-trade real Polymarket data (needs requests)
 
 The CLI wires the standard stack: ExternalOdds + Consensus -> ShrinkageEnsemble
--> edge gate -> fractional Kelly -> risk engine -> paper fills.
+-> edge gate -> fractional Kelly -> risk engine -> paper fills, and (in paper
+mode) continuously compares our calibration against the market consensus.
 """
 
 from __future__ import annotations
@@ -67,12 +69,63 @@ def cmd_backtest(args: argparse.Namespace) -> int:
 
 
 def cmd_paper(args: argparse.Namespace) -> int:
+    from .data.sample import generate_scenario
+    from .runner import PaperTrader, SyntheticMarketSource
+
+    if args.live:
+        return _cmd_paper_live(args)
+
+    # Offline simulated feed: deterministic, dependency-free, models the real
+    # cadence (markets open, you bet, they later resolve). Our signal is a less
+    # noisy read of truth than the market, i.e. a genuine edge to harvest.
+    scenario = generate_scenario(
+        n_markets=args.n_markets, seed=args.seed, signal_sigma=0.04
+    )
+    model = _build_model(scenario.external_probs, SETTINGS)
+    source = SyntheticMarketSource(scenario, batch_size=args.batch_size)
+    repo = None
+    if args.db:
+        from .data.repository import Repository
+
+        repo = Repository(args.db)
+    trader = PaperTrader(SETTINGS, model, source, repository=repo)
+    report = trader.run()
+
+    print(f"\nPaper run (simulated feed, {args.n_markets} markets, seed {args.seed}):\n")
+    print(report.render())
+    if args.db:
+        print(f"\n  audit trail persisted to {args.db}")
+    return 0
+
+
+def _cmd_paper_live(args: argparse.Namespace) -> int:
+    """Paper-trade against the real Polymarket feed.
+
+    Read-only and risk-free: it fetches live books and simulates fills.  Placing
+    real orders is Phase 3 (LiveExecutor), deliberately gated.  A real edge needs
+    a real signal source wired into ExternalOddsModel — without one we abstain on
+    every market, which is the correct, safe default.
+    """
+    try:
+        from .data.polymarket_client import PolymarketClient
+    except Exception as exc:  # pragma: no cover
+        print(f"Live paper trading needs the 'requests' extra: pip install -e '.[live]'\n{exc}")
+        return 1
+
     print(
-        "Paper trading against live data needs (a) the 'requests' package and\n"
-        "(b) a real signal source wired into ExternalOddsModel.\n\n"
-        "The plumbing is ready in polybet/data/polymarket_client.py and the\n"
-        "engine; supply probabilities for live markets and call TradingEngine.step\n"
-        "on each polled snapshot. See docs/PLAN.md 'Phase 3'."
+        "Live paper trading is read-only and safe, but it needs a real signal\n"
+        "source to have any edge. Wire one up like this:\n\n"
+        "    from polybet.data.polymarket_client import PolymarketClient\n"
+        "    from polybet.signals import MoneylineOddsSource, MarketMatcher, TwoWayOdds\n"
+        "    from polybet.signals.source import combine_sources\n"
+        "    from polybet.runner import PaperTrader, MarketSource\n\n"
+        "    client = PolymarketClient()\n"
+        "    markets = client.fetch_markets(limit=100)\n"
+        "    # 1. de-vig external odds -> independent P(YES)\n"
+        "    # 2. match external events to market ids (MarketMatcher)\n"
+        "    # 3. feed combine_sources(...) into ExternalOddsModel each poll\n\n"
+        "See docs/PLAN.md 'Phase 2' for the full recipe. Until a signal is wired,\n"
+        "the engine correctly abstains on every market (no edge => no bet)."
     )
     return 0
 
@@ -93,7 +146,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     bt.set_defaults(func=cmd_backtest)
 
-    pa = sub.add_parser("paper", help="paper-trade live data (needs requests + signal)")
+    pa = sub.add_parser("paper", help="paper-trade a simulated (or live) feed")
+    pa.add_argument("--n-markets", type=int, default=500)
+    pa.add_argument("--seed", type=int, default=1)
+    pa.add_argument("--batch-size", type=int, default=25, help="markets opened per tick")
+    pa.add_argument("--db", type=str, default=None, help="SQLite path for the audit trail")
+    pa.add_argument("--live", action="store_true", help="use the real Polymarket feed (read-only)")
     pa.set_defaults(func=cmd_paper)
 
     args = p.parse_args(argv)

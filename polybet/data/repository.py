@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS settlements (
     market_id     TEXT NOT NULL,
     resolved_yes  INTEGER NOT NULL,
     pnl           REAL NOT NULL,
-    fair_prob     REAL
+    fair_prob     REAL,
+    consensus     REAL
 );
 """
 
@@ -40,10 +41,18 @@ class Repository:
         self.path = path
         with closing(self._conn()) as c:
             c.executescript(_SCHEMA)
+            self._migrate(c)
             c.commit()
 
     def _conn(self) -> sqlite3.Connection:
         return sqlite3.connect(self.path)
+
+    @staticmethod
+    def _migrate(c: sqlite3.Connection) -> None:
+        """Idempotent, additive migrations so old DB files keep working."""
+        cols = {row[1] for row in c.execute("PRAGMA table_info(settlements)")}
+        if "consensus" not in cols:
+            c.execute("ALTER TABLE settlements ADD COLUMN consensus REAL")
 
     def record_bet(self, fill: Fill, fair_prob: float | None) -> None:
         with closing(self._conn()) as c:
@@ -55,13 +64,18 @@ class Repository:
             c.commit()
 
     def record_settlement(
-        self, market_id: str, resolved_yes: bool, pnl: float, fair_prob: float | None
+        self,
+        market_id: str,
+        resolved_yes: bool,
+        pnl: float,
+        fair_prob: float | None,
+        consensus: float | None = None,
     ) -> None:
         with closing(self._conn()) as c:
             c.execute(
-                "INSERT INTO settlements (market_id, resolved_yes, pnl, fair_prob)"
-                " VALUES (?, ?, ?, ?)",
-                (market_id, 1 if resolved_yes else 0, pnl, fair_prob),
+                "INSERT INTO settlements (market_id, resolved_yes, pnl, fair_prob, consensus)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (market_id, 1 if resolved_yes else 0, pnl, fair_prob, consensus),
             )
             c.commit()
 
@@ -74,3 +88,11 @@ class Repository:
         preds = [r[0] for r in rows]
         outs = [int(r[1]) for r in rows]
         return preds, outs
+
+    def consensus_calibration_data(self) -> tuple[list[float], list[int]]:
+        """Recorded (consensus, outcome) pairs — the baseline our model must beat."""
+        with closing(self._conn()) as c:
+            rows = c.execute(
+                "SELECT consensus, resolved_yes FROM settlements WHERE consensus IS NOT NULL"
+            ).fetchall()
+        return [r[0] for r in rows], [int(r[1]) for r in rows]
